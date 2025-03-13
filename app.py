@@ -8,7 +8,7 @@ import mimetypes
 import json
 
 app = Flask(__name__, static_folder='../frontend/dist')
-CORS(app)
+CORS(app, resources={r"/*": {"origins": ["https://pic-sort-tau.vercel.app"]}})
 
 # Image extensions to filter by
 IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.tiff']
