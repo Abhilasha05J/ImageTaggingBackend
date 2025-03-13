@@ -47,44 +47,45 @@ def index():
     })
 
 
+base_paths = [
+    os.path.expanduser("~"),       # Home directory
+    os.path.expanduser("~/Desktop"),
+    os.path.expanduser("~/Documents"),
+    os.path.expanduser("~/Pictures"),
+    os.path.expanduser("~/Downloads"),
+    "/app",  # Default app directory in Railway/Render
+    "/tmp"   # Writable temporary directory in most cloud environments
+]
+
 @app.route('/api/list-directories', methods=['GET'])
 def list_directories():
     """List available directories for user selection"""
     try:
-        # Get the root directory path from the request query parameter
-        # Default to the home directory if not provided
         root_path = request.args.get('root', os.path.expanduser("~"))
-        
+
+        # Check if the root path exists & is accessible
         if not os.path.exists(root_path) or not os.path.isdir(root_path):
-            return jsonify({"error": "Invalid root directory path"}), 400
-            
-        # List directories in the specified root path
+            return jsonify({"error": f"Invalid root directory path: {root_path}"}), 400
+
         available_dirs = []
-        try:
-            for item in os.listdir(root_path):
+        for item in os.listdir(root_path):
+            try:
                 full_path = os.path.join(root_path, item)
                 if os.path.isdir(full_path):
-                    available_dirs.append({
-                        "path": full_path,
-                        "name": item
-                    })
-            
-            # Add parent directory if not at filesystem root
-            if root_path != "/":
-                parent_dir = os.path.dirname(root_path)
-                available_dirs.insert(0, {
-                    "path": parent_dir,
-                    "name": ".." 
-                })
-                
-            return jsonify({
-                "directories": available_dirs,
-                "current_path": root_path
-            })
-        except PermissionError:
-            return jsonify({"error": "Permission denied. Cannot access the directory."}), 403
+                    available_dirs.append({"path": full_path, "name": item})
+            except PermissionError:
+                continue  # Skip directories with permission issues
+        
+        # Debugging logs (Check deployment logs in Railway/Render)
+        print(f"HOME DIRECTORY: {os.path.expanduser('~')}")
+        print(f"Directories in '{root_path}':", available_dirs)
+
+        return jsonify({"directories": available_dirs, "current_path": root_path})
     except Exception as e:
+        print("Error in list-directories:", str(e))  # Debugging logs
         return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/list-subdirectories', methods=['POST'])
 def list_subdirectories():
     """List subdirectories of a given directory"""
