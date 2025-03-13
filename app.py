@@ -13,32 +13,6 @@ CORS(app, resources={r"/*": {"origins": ["https://pic-sort-tau.vercel.app"]}})
 # Image extensions to filter by
 IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.tiff']
 
-# @app.route('/api/list-directories', methods=['GET'])
-# def list_directories():
-#     """List available directories for user selection"""
-#     try:
-#         # For demo purposes, we'll use a few common directories
-#         # In production, this would be customized to the server environment
-#         base_paths = [
-#             os.path.expanduser("~"),
-#             os.path.expanduser("~/Desktop"),
-#             os.path.expanduser("~/Documents"),
-#             os.path.expanduser("~/Pictures"),
-#             os.path.expanduser("~/Downloads"),
-#             "/"  # Root directory
-#         ]
-        
-#         available_dirs = []
-#         for base in base_paths:
-#             if os.path.exists(base) and os.path.isdir(base):
-#                 available_dirs.append({
-#                     "path": base,
-#                     "name": os.path.basename(base) or "Root"
-#                 })
-        
-#         return jsonify({"directories": available_dirs})
-#     except Exception as e:
-#         return jsonify({"error": str(e)}), 500
 @app.route("/")
 def index():
     return jsonify({
@@ -47,42 +21,67 @@ def index():
     })
 
 
-base_paths = [
-    os.path.expanduser("~"),       # Home directory
-    os.path.expanduser("~/Desktop"),
-    os.path.expanduser("~/Documents"),
-    os.path.expanduser("~/Pictures"),
-    os.path.expanduser("~/Downloads"),
-    "/app",  # Default app directory in Railway/Render
-    "/tmp"   # Writable temporary directory in most cloud environments
-]
+# base_paths = [
+#     os.path.expanduser("~"),       # Home directory
+#     os.path.expanduser("~/Desktop"),
+#     os.path.expanduser("~/Documents"),
+#     os.path.expanduser("~/Pictures"),
+#     os.path.expanduser("~/Downloads"),
+#     "/app",  # Default app directory in Railway/Render
+#     "/tmp"   # Writable temporary directory in most cloud environments
+# ]
 
+# @app.route('/api/list-directories', methods=['GET'])
+# def list_directories():
+#     """List available directories for user selection"""
+#     try:
+#         root_path = request.args.get('root', os.path.expanduser("~"))
+
+#         # Check if the root path exists & is accessible
+#         if not os.path.exists(root_path) or not os.path.isdir(root_path):
+#             return jsonify({"error": f"Invalid root directory path: {root_path}"}), 400
+
+#         available_dirs = []
+#         for item in os.listdir(root_path):
+#             try:
+#                 full_path = os.path.join(root_path, item)
+#                 if os.path.isdir(full_path):
+#                     available_dirs.append({"path": full_path, "name": item})
+#             except PermissionError:
+#                 continue  # Skip directories with permission issues
+        
+#         # Debugging logs (Check deployment logs in Railway/Render)
+#         print(f"HOME DIRECTORY: {os.path.expanduser('~')}")
+#         print(f"Directories in '{root_path}':", available_dirs)
+
+#         return jsonify({"directories": available_dirs, "current_path": root_path})
+#     except Exception as e:
+#         print("Error in list-directories:", str(e))  # Debugging logs
+#         return jsonify({"error": str(e)}), 500
 @app.route('/api/list-directories', methods=['GET'])
 def list_directories():
-    """List available directories for user selection"""
+    """List accessible directories for user selection"""
     try:
-        root_path = request.args.get('root', os.path.expanduser("~"))
-
-        # Check if the root path exists & is accessible
-        if not os.path.exists(root_path) or not os.path.isdir(root_path):
-            return jsonify({"error": f"Invalid root directory path: {root_path}"}), 400
+        # Define base directories (Check if they exist before listing)
+        base_paths = [
+            "/opt/render/project",  # Project root (Your Flask app)
+            "/tmp",                 # Writable temp directory
+            "/app",                 # Default app directory (if available)
+            os.path.expanduser("~"),  # Home directory (if accessible)
+        ]
 
         available_dirs = []
-        for item in os.listdir(root_path):
-            try:
-                full_path = os.path.join(root_path, item)
-                if os.path.isdir(full_path):
-                    available_dirs.append({"path": full_path, "name": item})
-            except PermissionError:
-                continue  # Skip directories with permission issues
-        
-        # Debugging logs (Check deployment logs in Railway/Render)
-        print(f"HOME DIRECTORY: {os.path.expanduser('~')}")
-        print(f"Directories in '{root_path}':", available_dirs)
+        for base in base_paths:
+            if os.path.exists(base) and os.path.isdir(base):
+                available_dirs.append({"path": base, "name": os.path.basename(base) or "Root"})
 
-        return jsonify({"directories": available_dirs, "current_path": root_path})
+        # Debugging Logs - Check Render Logs
+        print(f"HOME DIRECTORY: {os.path.expanduser('~')}")
+        print(f"Available directories: {available_dirs}")
+
+        return jsonify({"directories": available_dirs})
     except Exception as e:
-        print("Error in list-directories:", str(e))  # Debugging logs
+        print("Error in list-directories:", str(e))  # Log the error in Render logs
         return jsonify({"error": str(e)}), 500
 
 
