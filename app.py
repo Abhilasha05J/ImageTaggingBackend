@@ -1,17 +1,34 @@
-# backend/app.py list of directories
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import os
-import shutil
-from werkzeug.utils import secure_filename
+import boto3
+from botocore.exceptions import ClientError
+from dotenv import load_dotenv
+from io import BytesIO
 import mimetypes
 import json
+import uuid
 
 app = Flask(__name__, static_folder='../frontend/dist')
-CORS(app, resources={r"/*": {"origins": ["https://pic-sort-tau.vercel.app"]}})
-
+CORS(app, resources={r"/*": {
+    "origins": ["http://localhost:3000", "https://pic-sort-tau.vercel.app"],
+    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    "allow_headers": ["Content-Type", "Authorization"]
+}})
 # Image extensions to filter by
 IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.tiff']
+
+load_dotenv()
+
+# Configure S3 client
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
+    region_name=os.environ.get('AWS_REGION', 'us-east-1')
+)
+S3_BUCKET = os.environ.get('S3_BUCKET_NAME')
+print(f"Using S3 Bucket: {S3_BUCKET}")
 
 @app.route("/")
 def index():
@@ -20,157 +37,157 @@ def index():
         "status": "running"
     })
 
-
-# base_paths = [
-#     os.path.expanduser("~"),       # Home directory
-#     os.path.expanduser("~/Desktop"),
-#     os.path.expanduser("~/Documents"),
-#     os.path.expanduser("~/Pictures"),
-#     os.path.expanduser("~/Downloads"),
-#     "/app",  # Default app directory in Railway/Render
-#     "/tmp"   # Writable temporary directory in most cloud environments
-# ]
-
-# @app.route('/api/list-directories', methods=['GET'])
-# def list_directories():
-#     """List available directories for user selection"""
-#     try:
-#         root_path = request.args.get('root', os.path.expanduser("~"))
-
-#         # Check if the root path exists & is accessible
-#         if not os.path.exists(root_path) or not os.path.isdir(root_path):
-#             return jsonify({"error": f"Invalid root directory path: {root_path}"}), 400
-
-#         available_dirs = []
-#         for item in os.listdir(root_path):
-#             try:
-#                 full_path = os.path.join(root_path, item)
-#                 if os.path.isdir(full_path):
-#                     available_dirs.append({"path": full_path, "name": item})
-#             except PermissionError:
-#                 continue  # Skip directories with permission issues
-        
-#         # Debugging logs (Check deployment logs in Railway/Render)
-#         print(f"HOME DIRECTORY: {os.path.expanduser('~')}")
-#         print(f"Directories in '{root_path}':", available_dirs)
-
-#         return jsonify({"directories": available_dirs, "current_path": root_path})
-#     except Exception as e:
-#         print("Error in list-directories:", str(e))  # Debugging logs
-#         return jsonify({"error": str(e)}), 500
 @app.route('/api/list-directories', methods=['GET'])
 def list_directories():
-    """List accessible directories for user selection"""
+    """List S3 directories (prefixes)"""
     try:
-        # Define base directories (Check if they exist before listing)
-        base_paths = [
-            "/opt/render/project",  # Project root (Your Flask app)
-            "/tmp",                 # Writable temp directory
-            "/app",                 # Default app directory (if available)
-            os.path.expanduser("~"),  # Home directory (if accessible)
-        ]
-
-        available_dirs = []
-        for base in base_paths:
-            if os.path.exists(base) and os.path.isdir(base):
-                available_dirs.append({"path": base, "name": os.path.basename(base) or "Root"})
-
-        # Debugging Logs - Check Render Logs
-        print(f"HOME DIRECTORY: {os.path.expanduser('~')}")
-        print(f"Available directories: {available_dirs}")
-
-        return jsonify({"directories": available_dirs})
+        # List the top-level "directories" (prefixes) in the S3 bucket
+        response = s3_client.list_objects_v2(
+            Bucket=S3_BUCKET,
+            Delimiter='/'
+        )
+        
+        directories = []
+        
+        # Add the root directory
+        directories.append({"path": "", "name": "Root"})
+        
+        # Add the common prefixes (folders)
+        if 'CommonPrefixes' in response:
+            for prefix in response['CommonPrefixes']:
+                prefix_name = prefix['Prefix'].rstrip('/')
+                directories.append({
+                    "path": prefix['Prefix'],
+                    "name": prefix_name
+                })
+        
+        return jsonify({"directories": directories})
     except Exception as e:
-        print("Error in list-directories:", str(e))  # Log the error in Render logs
+        print("Error in list-directories:", str(e))
         return jsonify({"error": str(e)}), 500
-
 
 @app.route('/api/list-subdirectories', methods=['POST'])
 def list_subdirectories():
-    """List subdirectories of a given directory"""
+    """List subdirectories (prefixes) within a given S3 prefix"""
     data = request.json
-    parent_dir = data.get('directory')
-    
-    if not parent_dir or not os.path.isdir(parent_dir):
-        return jsonify({"error": "Invalid directory path"}), 400
+    parent_prefix = data.get('directory', '')
     
     try:
+        # Ensure the prefix ends with a slash if it's not empty
+        if parent_prefix and not parent_prefix.endswith('/'):
+            parent_prefix += '/'
+            
+        # List objects with the given prefix
+        response = s3_client.list_objects_v2(
+            Bucket=S3_BUCKET,
+            Prefix=parent_prefix,
+            Delimiter='/'
+        )
+        
         subdirs = []
-        for item in os.listdir(parent_dir):
-            full_path = os.path.join(parent_dir, item)
-            if os.path.isdir(full_path):
+        
+        # Process common prefixes (folders)
+        if 'CommonPrefixes' in response:
+            for prefix in response['CommonPrefixes']:
+                # Skip the parent prefix itself
+                if prefix['Prefix'] == parent_prefix:
+                    continue
+                    
+                # Extract the folder name from the prefix
+                folder_name = prefix['Prefix'][len(parent_prefix):].rstrip('/')
+                
                 subdirs.append({
-                    "path": full_path,
-                    "name": item
+                    "path": prefix['Prefix'],
+                    "name": folder_name
                 })
         
         return jsonify({"subdirectories": subdirs})
-    except PermissionError:
-        return jsonify({"error": "Permission denied. Cannot access the directory."}), 403
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/list-images', methods=['POST'])
 def list_images():
-    """List all images in a specified directory"""
+    """List all images in a specified S3 prefix"""
     data = request.json
-    folder_path = data.get('folderPath')
-    
-    if not folder_path or not os.path.isdir(folder_path):
-        return jsonify({"error": "Invalid folder path"}), 400
+    folder_path = data.get('folderPath', '')
     
     try:
-        # Get all files in the directory
-        files = os.listdir(folder_path)
+        # Ensure the prefix ends with a slash if it's not empty
+        if folder_path and not folder_path.endswith('/'):
+            folder_path += '/'
+            
+        # List objects with the given prefix
+        response = s3_client.list_objects_v2(
+            Bucket=S3_BUCKET,
+            Prefix=folder_path
+        )
         
-        # Filter only image files
         image_files = []
-        for file in files:
-            file_ext = os.path.splitext(file)[1].lower()
-            file_path = os.path.join(folder_path, file)
-            if os.path.isfile(file_path) and file_ext in IMAGE_EXTENSIONS:
-                image_files.append(file)
+        
+        # Process objects (files)
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                # Skip "directory" objects (ending with /)
+                if obj['Key'].endswith('/'):
+                    continue
+                    
+                # Check if the file is an image
+                file_ext = os.path.splitext(obj['Key'])[1].lower()
+                if file_ext in IMAGE_EXTENSIONS:
+                    # Extract the filename from the key
+                    filename = obj['Key'][len(folder_path):] if folder_path else obj['Key']
+                    image_files.append(filename)
         
         return jsonify({
             "images": image_files,
             "totalCount": len(image_files),
             "folderPath": folder_path
         })
-    except PermissionError:
-        return jsonify({"error": "Permission denied. Cannot access the directory."}), 403
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/image/<path:folder_path>/<filename>')
 def get_image(folder_path, filename):
-    """Serve an image file from the specified directory"""
-    return send_from_directory(folder_path, filename)
+    """Serve an image file from S3"""
+    try:
+        # Construct the S3 key
+        s3_key = os.path.join(folder_path, filename).replace('\\', '/')
+        
+        # Get the object from S3
+        response = s3_client.get_object(
+            Bucket=S3_BUCKET,
+            Key=s3_key
+        )
+        
+        # Set the appropriate content type
+        content_type = response['ContentType']
+        
+        # Stream the file content
+        return response['Body'].read(), 200, {'Content-Type': content_type}
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/save-categorized', methods=['POST'])
 def save_categorized():
-    """Save categorized images to new folders based on categories"""
+    """Save categorized images to new folders in S3 based on categories"""
     data = request.json
-    source_folder = data.get('sourceFolder')
-    categorized_images = data.get('categorizedImages')
+    source_folder = data.get('sourceFolder', '')
+    categorized_images = data.get('categorizedImages', [])
     
-    if not source_folder or not os.path.isdir(source_folder) or not categorized_images:
-        return jsonify({"error": "Invalid data provided"}), 400
+    if not categorized_images:
+        return jsonify({"error": "No categorized images provided"}), 400
     
     try:
-        # Create destination parent folder (adjacent to source folder)
-        dest_parent = os.path.join(os.path.dirname(source_folder), "categorized_images")
-        if not os.path.exists(dest_parent):
-            os.makedirs(dest_parent)
-        
-        # Create destination folders for each category
-        categories = set([img['category'] for img in categorized_images if 'category' in img])
-        category_folders = {}
-        
-        for category in categories:
-            category_folder = os.path.join(dest_parent, category)
-            if not os.path.exists(category_folder):
-                os.makedirs(category_folder)
-            category_folders[category] = category_folder
+        # Ensure the source folder ends with a slash if it's not empty
+        if source_folder and not source_folder.endswith('/'):
+            source_folder += '/'
+            
+        # Create destination parent folder in S3
+        dest_parent = "categorized_images/"
+        if source_folder:
+            parent_dir = os.path.dirname(source_folder.rstrip('/'))
+            if parent_dir:
+                dest_parent = parent_dir + "/categorized_images/"
         
         # Process each image
         results = []
@@ -181,15 +198,20 @@ def save_categorized():
             filename = img_data['filename']
             category = img_data['category']
             
-            # Source and destination paths
-            source_path = os.path.join(source_folder, filename)
+            # Source and destination paths in S3
+            source_key = os.path.join(source_folder, filename).replace('\\', '/')
             name, ext = os.path.splitext(filename)
             new_filename = f"{name}_{category}{ext}"
-            dest_path = os.path.join(category_folders[category], new_filename)
+            dest_key = os.path.join(dest_parent, category, new_filename).replace('\\', '/')
             
-            # Copy and rename the file
             try:
-                shutil.copy2(source_path, dest_path)
+                # Copy the object within S3
+                s3_client.copy_object(
+                    Bucket=S3_BUCKET,
+                    CopySource={'Bucket': S3_BUCKET, 'Key': source_key},
+                    Key=dest_key
+                )
+                
                 results.append({
                     "original": filename,
                     "renamed": new_filename,
@@ -211,6 +233,14 @@ def save_categorized():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# Utility function to check if a key exists in S3
+def key_exists(key):
+    try:
+        s3_client.head_object(Bucket=S3_BUCKET, Key=key)
+        return True
+    except ClientError:
+        return False
+
 # Serve React app in production
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
@@ -221,5 +251,5 @@ def serve(path):
         return send_from_directory(app.static_folder, 'index.html')
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0",  port=8080)
+    app.run(host="0.0.0.0", port=8080)
     
