@@ -181,13 +181,11 @@ def save_categorized():
         # Ensure the source folder ends with a slash if it's not empty
         if source_folder and not source_folder.endswith('/'):
             source_folder += '/'
+
+        folder_name = os.path.basename(source_folder.rstrip('/')) if source_folder else "unnamed"
             
         # Create destination parent folder in S3
-        dest_parent = "categorized_images/"
-        if source_folder:
-            parent_dir = os.path.dirname(source_folder.rstrip('/'))
-            if parent_dir:
-                dest_parent = parent_dir + "/categorized_images/"
+        dest_parent = f"{folder_name}_categorized/"
         
         # Process each image
         results = []
