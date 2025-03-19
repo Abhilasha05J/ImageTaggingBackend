@@ -11,7 +11,7 @@ import uuid
 
 app = Flask(__name__, static_folder='../frontend/dist')
 CORS(app, resources={r"/*": {
-    "origins": ["http://localhost:3000", "https://pic-sort-tau.vercel.app"],
+    "origins": ["http://localhost:3000", "https://image-tagging-frontend.vercel.app/"],
     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     "allow_headers": ["Content-Type", "Authorization"]
 }})
