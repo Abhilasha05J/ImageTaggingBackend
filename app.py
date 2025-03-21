@@ -14,7 +14,7 @@ from flask import Response
 
 app = Flask(__name__, static_folder='../frontend/dist')
 CORS(app, resources={r"/*": {
-    "origins": ["http://localhost:3001", "https://image-tagging-frontend.vercel.app"],
+    "origins": ["http://localhost:3000", "https://image-tagging-frontend.vercel.app"],
     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     "allow_headers": ["Content-Type", "Authorization"]
 }})
@@ -261,7 +261,8 @@ def save_categorized():
         folder_name = os.path.basename(source_folder.rstrip('/')) if source_folder else "unnamed"
             
         # Create destination parent folder in S3
-        dest_parent = f"{folder_name}_categorized/"
+        # dest_parent = f"{folder_name}_categorized/"
+        dest_parent = "CategorizedFiles/"
         
         # Process each image
         results = []
@@ -318,6 +319,7 @@ def save_categorized():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/upload-images', methods=['POST'])
 def upload_images():
