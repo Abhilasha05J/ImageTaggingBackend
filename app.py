@@ -162,7 +162,7 @@ def list_images():
     """List all images in a specified S3 prefix with pagination"""
     data = request.json
     folder_path = data.get('folderPath', '')
-    page_size = data.get('pageSize', 100)
+    page_size = data.get('pageSize', 2000)
     page = data.get('page', 1)
     
     try:
