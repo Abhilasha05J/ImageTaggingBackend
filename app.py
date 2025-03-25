@@ -80,7 +80,7 @@ def list_directories():
         directories = []
         
         # Add the root directory
-        directories.append({"path": "", "name": "Root"})
+        #directories.append({"path": "", "name": "Root"})
         
         # Add the common prefixes (folders)
         if 'CommonPrefixes' in response:
